@@ -1,0 +1,19 @@
+Package: modularmappingstudio
+Title: Modular Mapping Studio Shiny Application
+Version: 0.1.0
+Authors@R: person("App", "Maintainer", role = c("aut", "cre"), email = "maintainer@example.com")
+Description: A modular Shiny application for uploading point and polygon data,
+    configuring Leaflet maps, batch geocoding with Azure Maps, and exporting
+    reproducible R code and standalone HTML maps.
+License: MIT
+Encoding: UTF-8
+Depends: R (>= 4.1.0)
+Imports:
+    bslib,
+    htmltools,
+    htmlwidgets,
+    httr2,
+    leaflet,
+    shiny,
+    sf,
+    zip
