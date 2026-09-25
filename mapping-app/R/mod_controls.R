@@ -2,8 +2,8 @@ mod_controls_ui <- function(id) {
   ns <- shiny::NS(id)
 
   shiny::tagList(
-    shiny::accordion(
-      shiny::accordion_panel(
+    bslib::accordion(
+      bslib::accordion_panel(
         "Markers and colours",
         shiny::radioButtons(ns("marker_type"), "Marker type", choices = c("Circle" = "circle", "Standard pin" = "marker"), inline = TRUE),
         shiny::numericInput(ns("radius"), "Circle radius", value = 6, min = 1, max = 30),
@@ -13,14 +13,14 @@ mod_controls_ui <- function(id) {
         shiny::textInput(ns("palette"), "Palette colours (comma-separated)", value = "#2C7FB8, #7FCDBB, #EDF8B1"),
         shiny::sliderInput(ns("opacity"), "Fill opacity", min = 0, max = 1, value = 0.8)
       ),
-      shiny::accordion_panel(
+      bslib::accordion_panel(
         "Popups and labels",
         shiny::textInput(ns("popup_template"), "Popup HTML template", value = "<b>{id}</b>"),
         shiny::helpText("Use {column_name} placeholders. HTML markup is allowed; inserted data values are escaped."),
         shiny::selectInput(ns("label_col"), "Hover label column", choices = character()),
         shiny::checkboxInput(ns("cluster"), "Cluster overlapping points", value = FALSE)
       ),
-      shiny::accordion_panel(
+      bslib::accordion_panel(
         "Map and polygons",
         shiny::selectInput(ns("tiles"), "Basemap", choices = c("OpenStreetMap", "CartoDB.Positron", "CartoDB.DarkMatter", "Esri.WorldImagery", "OpenTopoMap")),
         shiny::checkboxInput(ns("show_legend"), "Show colour legend", value = TRUE),
