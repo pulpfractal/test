@@ -5,87 +5,86 @@ for (file in list.files("R", pattern = "\\.R$", full.names = TRUE)) {
 }
 
 ui <- bslib::page_sidebar(
-  title = "Modular Mapping Studio",
+  title = "Leaflet Map Studio",
   theme = bslib::bs_theme(version = 5, bootswatch = "flatly"),
   sidebar = bslib::sidebar(
-    width = 370,
+    width = 490,
     open = "always",
-    bslib::accordion(
-      bslib::accordion_panel("Upload data and boundaries", mod_upload_ui("upload")),
-      bslib::accordion_panel("Azure Maps geocoding", mod_geocode_ui("geocode")),
-      bslib::accordion_panel("Map design", mod_controls_ui("controls")),
-      open = c("Upload data and boundaries")
-    ),
-    shiny::helpText("CSV coordinates should be decimal degrees (WGS84). Polygon input accepts GeoJSON or GPKG.")
-  ),
-  bslib::navset_card_tab(
-    bslib::nav_panel("Map preview", leaflet::leafletOutput("map", height = "75vh")),
-    bslib::nav_panel(
-      "Generated code and exports",
-      bslib::layout_columns(
-        col_widths = c(8, 4),
-        bslib::card(
-          bslib::card_header("Renderer script"),
-          shiny::verbatimTextOutput("generated_code"),
-          full_screen = TRUE
-        ),
-        bslib::card(
-          bslib::card_header("Export"),
-          shiny::p("The HTML export captures the current map. The project ZIP contains modular R code and the uploaded data needed to recreate it."),
-          shiny::downloadButton("download_html", "Download standalone HTML", class = "btn-primary"),
-          shiny::br(), shiny::br(),
-          shiny::downloadButton("download_script", "Download renderer script"),
-          shiny::br(), shiny::br(),
-          shiny::downloadButton("download_bundle", "Download project ZIP"),
-          shiny::hr(),
-          shiny::p("Basemap tiles are fetched online. The app never includes the Azure Maps key in downloaded files."),
-          full_screen = FALSE
-        )
-      )
+    shiny::selectInput("active_layer", "Active Layer", choices = character()),
+    bslib::navset_tab(
+      bslib::nav_panel("Data", mod_datasets_ui("datasets"),
+        bslib::accordion(bslib::accordion_panel("Azure Maps geocoding", mod_geocode_ui("geocode")))),
+      bslib::nav_panel("Layers", mod_layers_ui("layers")),
+      bslib::nav_panel("Markers", mod_markers_ui("markers")),
+      bslib::nav_panel("Colours", mod_colours_ui("colours")),
+      bslib::nav_panel("Polygons", mod_polygons_ui("polygons")),
+      bslib::nav_panel("Popups", mod_popups_ui("popups")),
+      bslib::nav_panel("Labels", mod_labels_ui("labels")),
+      bslib::nav_panel("Legends", mod_legends_ui("legends")),
+      bslib::nav_panel("Filters", mod_filters_ui("filters")),
+      bslib::nav_panel("Widgets", mod_widgets_ui("widgets")),
+      bslib::nav_panel("Map", mod_basemap_ui("basemap")),
+      bslib::nav_panel("Export", mod_export_ui("export"))
     )
+  ),
+  bslib::card(
+    bslib::card_header("Map preview"),
+    leaflet::leafletOutput("map", height = "78vh"),
+    full_screen = TRUE
   )
 )
 
 server <- function(input, output, session) {
-  upload <- mod_upload_server("upload")
-  geocoded <- mod_geocode_server("geocode", upload$data, upload$columns)
-  settings <- mod_controls_server("controls", geocoded$data)
+  project <- shiny::reactiveValues(
+    datasets = list(), layers = list(), map = default_map(),
+    widgets = default_widgets(), filters = list()
+  )
+  active_dataset <- shiny::reactiveVal("")
+  active_layer <- shiny::reactiveVal("")
+  editor_revision <- shiny::reactiveVal(0L)
+
+  datasets <- mod_datasets_server("datasets", project, active_dataset, active_layer, editor_revision)
+  geocode <- mod_geocode_server("geocode", project, active_dataset,
+    datasets$touch, editor_revision)
+  mod_layers_server("layers", project, active_layer, editor_revision)
+  mod_markers_server("markers", project, active_layer, editor_revision)
+  mod_colours_server("colours", project, active_layer, editor_revision)
+  mod_polygons_server("polygons", project, active_layer, editor_revision)
+  mod_popups_server("popups", project, active_layer, editor_revision)
+  mod_labels_server("labels", project, active_layer, editor_revision)
+  mod_legends_server("legends", project, active_layer, editor_revision)
+  mod_filters_server("filters", project, active_layer, editor_revision)
+  mod_widgets_server("widgets", project)
+  mod_basemap_server("basemap", project)
+  mod_export_server("export", project, azure_key = geocode$key, helpers_dir = "R")
+
+  shiny::observeEvent(project$layers, {
+    layers <- project$layers
+    ids <- names(layers)
+    if (is.null(ids)) ids <- character()
+    choices <- stats::setNames(ids, vapply(layers, function(layer) {
+      paste(layer$name, "(", layer$type, ")")
+    }, character(1)))
+    selected <- active_layer()
+    if (!selected %in% names(layers)) {
+      selected <- if (length(layers)) names(layers)[[1]] else ""
+      active_layer(selected)
+    }
+    shiny::updateSelectInput(session, "active_layer", choices = choices, selected = selected)
+  }, ignoreInit = FALSE)
+
+  shiny::observeEvent(input$active_layer, {
+    if (input$active_layer %in% names(project$layers) &&
+        !identical(input$active_layer, active_layer())) active_layer(input$active_layer)
+  })
 
   output$map <- leaflet::renderLeaflet({
-    tryCatch(
-      build_leaflet_map(geocoded$data(), upload$polygons(), settings(), geocoded$columns()),
-      error = function(e) {
-        shiny::showNotification(conditionMessage(e), type = "warning")
-        leaflet::leaflet() |> leaflet::addProviderTiles("CartoDB.Positron")
-      }
-    )
+    config <- project_list(project)
+    tryCatch(build_leaflet_map(config), error = function(e) {
+      shiny::showNotification(conditionMessage(e), type = "warning")
+      create_base_map(config$map)
+    })
   })
-
-  output$generated_code <- shiny::renderText({
-    shiny::req(geocoded$data())
-    make_renderer_script(settings(), geocoded$columns(), settings()$custom_leaflet)
-  })
-
-  output$download_html <- shiny::downloadHandler(
-    filename = function() "map.html",
-    content = function(file) {
-      render_map_html(geocoded$data(), upload$polygons(), settings(), geocoded$columns(), file, selfcontained = TRUE)
-    }
-  )
-
-  output$download_script <- shiny::downloadHandler(
-    filename = function() "render_map.R",
-    content = function(file) {
-      writeLines(make_renderer_script(settings(), geocoded$columns(), settings()$custom_leaflet), file, useBytes = TRUE)
-    }
-  )
-
-  output$download_bundle <- shiny::downloadHandler(
-    filename = function() "mapping-project.zip",
-    content = function(file) {
-      write_project_bundle(file, geocoded$data(), upload$polygons(), settings(), geocoded$columns(), settings()$custom_leaflet)
-    }
-  )
 }
 
 shiny::shinyApp(ui, server)

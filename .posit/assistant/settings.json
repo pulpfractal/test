@@ -1,0 +1,12 @@
+{
+  "permission": {
+    "edit": {
+      "*.R": "allow"
+    },
+    "webfetch": {
+      "https://rstudio.github.io/*": "allow",
+      "https://api.github.com/*": "allow",
+      "https://raw.githubusercontent.com/*": "allow"
+    }
+  }
+}
